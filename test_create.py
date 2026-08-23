@@ -246,6 +246,10 @@ def test_handler_rejects(body, status, captured):
     assert "error" in body_of(resp)
     assert captured == [], "rejected request must not write to DynamoDB"
 
+def test_error_messages_are_specific(captured):
+    too_long = create.handler(post({"url": "https://example.com/" + "a" * 3000}), None)
+    bad_host = create.handler(post({"url": "face"}), None)
+    assert body_of(too_long)["error"] != body_of(bad_host)["error"]
 
 def test_handler_preflight():
     resp = create.handler({"httpMethod": "OPTIONS", "headers": {}}, None)

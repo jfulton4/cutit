@@ -162,8 +162,14 @@ def handler(event, context):
         url = normalize_url(body.get("url") or "")
         requested = body.get("code")
 
-        if not url or len(url) > MAX_URL_LEN or not valid_url(url):
-            return respond(event, 400, {"error": "Provide a valid http(s) URL under 4KB."})
+        if not url:
+            return respond(event, 400, {"error": "Provide a URL."})
+        if len(url) > MAX_URL_LEN:
+            return respond(event, 400,
+                           {"error": f"URL is too long. Use one shorter than {MAX_URL_LEN} characters."})
+        if not valid_url(url):
+            return respond(event, 400,
+                           {"error": "Provide a valid http(s) URL, e.g. example.com/page."})
 
         reason = abuse_reason(url)
         if reason:
