@@ -105,7 +105,16 @@ def handler(event, context):
     # rejects expired items on the normal path; this only catches the
     # get_item fallback path, where the condition was not applied.
     exp = item.get("expiresAt")
-    if isinstance(exp, (int, float)) and exp <= _now_secs():
+    if exp is not None:
+        try:
+            expired = float(exp) <= _now_secs()
+        except (TypeError, ValueError):
+            print("ERROR_BAD_EXPIRY:", repr(exp))
+            expired = True
+    else:
+        expired = False
+
+    if expired:
         try:
             ddb.delete_item(Key={"code": code})
         except Exception as e3:
