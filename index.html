@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>cutit.app — shorten links</title>
+  <meta name="description" content="A tiny URL shortener powered by AWS (API Gateway, Lambda, DynamoDB).">
+
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+
+  <style>
+    :root {
+      --radius: 14px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font: 16px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      color: #111;
+    }
+
+    main {
+      max-width: 760px;
+      margin: 6vh auto;
+      padding: 0 16px;
+    }
+
+    header {
+      display: flex;
+      align-items: baseline;
+      gap: .5rem;
+      margin-bottom: .75rem;
+    }
+
+    h1 {
+      font-size: 1.75rem;
+      margin: 0;
+    }
+
+    .muted {
+      color: #666;
+      font-size: .95rem;
+    }
+
+    .card {
+      border: 1px solid #e5e7eb;
+      border-radius: var(--radius);
+      padding: 16px;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, .04);
+      background: #fff;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: .5rem;
+    }
+
+    .row-2 {
+      display: grid;
+      grid-template-columns: 1fr 160px 140px;
+      gap: .5rem;
+      margin-top: .5rem;
+    }
+
+    input,
+    select,
+    button {
+      width: 100%;
+      min-height: 44px;
+      padding: .7rem .9rem;
+      border-radius: 12px;
+      border: 1px solid #d1d5db;
+      font-size: 1rem;
+    }
+
+    input:focus,
+    select:focus {
+      outline: none;
+      border-color: #111;
+      box-shadow: 0 0 0 3px rgba(0, 0, 0, .06);
+    }
+
+    button {
+      cursor: pointer;
+      border: 1px solid #111;
+      background: #111;
+      color: #fff;
+    }
+
+    button[disabled] {
+      opacity: .6;
+      cursor: wait;
+    }
+
+    .result {
+      margin-top: 1rem;
+      display: none;
+    }
+
+    .ok {
+      color: #065f46;
+      background: #ecfdf5;
+      border: 1px solid #a7f3d0;
+      padding: .75rem;
+      border-radius: 12px;
+    }
+
+    .err {
+      color: #b00020;
+      background: #fee2e2;
+      border: 1px solid #fecaca;
+      padding: .75rem;
+      border-radius: 12px;
+    }
+
+    .actions {
+      display: flex;
+      gap: .5rem;
+      margin-top: .5rem;
+    }
+
+    .small {
+      color: #6b7280;
+      font-size: .9rem;
+      margin-top: .75rem;
+    }
+
+    .link {
+      font-weight: 600;
+      overflow-wrap: anywhere;
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    @media (max-width: 640px) {
+      main {
+        margin: 3vh auto;
+        padding: 0 14px;
+      }
+
+      header {
+        display: block;
+        margin-bottom: 1rem;
+      }
+
+      h1 {
+        font-size: 1.6rem;
+        line-height: 1.15;
+      }
+
+      .muted {
+        display: block;
+        margin-top: 0.25rem;
+        font-size: 0.92rem;
+      }
+
+      .card {
+        padding: 14px;
+        border-radius: 16px;
+      }
+
+      .row,
+      .row-2 {
+        grid-template-columns: 1fr;
+        gap: 0.6rem;
+      }
+
+      .row-2 {
+        margin-top: 0.6rem;
+      }
+
+      .result {
+        font-size: 0.95rem;
+      }
+
+      .small {
+        font-size: 0.85rem;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <main>
+    <header>
+      <h1>cutit.app</h1>
+      <span class="muted">Tiny links. Serverless backend.</span>
+    </header>
+
+    <div class="card">
+      <div class="row">
+        <label class="sr-only" for="longUrl">Long URL</label>
+        <input id="longUrl" type="url" placeholder="example.com/very/long/path" autocomplete="off" autocapitalize="none"
+          spellcheck="false" />
+        <button id="shortenBtn">Shorten</button>
+      </div>
+
+      <div class="row-2">
+        <label class="sr-only" for="customCode">Custom short code</label>
+        <input id="customCode" type="text" placeholder="custom code (optional)" autocomplete="off" autocapitalize="none"
+          spellcheck="false" />
+
+        <label class="sr-only" for="ttl">Expiration time</label>
+        <select id="ttl">
+          <option value="24">TTL: 24 hours</option>
+          <option value="72" selected>TTL: 72 hours</option>
+          <option value="168">TTL: 7 days</option>
+          <option value="720">TTL: 30 days</option>
+        </select>
+
+        <button id="copyBtn" type="button">Copy result</button>
+      </div>
+
+      <div id="msg" class="result" role="status" aria-live="polite"></div>
+      <div class="small">Powered by AWS</div>
+    </div>
+  </main>
+
+  <script>
+    const API_BASE = "https://api.cutit.app";
+    const PUBLIC_BASE = "https://cutit.app";
+    const shortenBtn = document.getElementById("shortenBtn");
+    const copyBtn = document.getElementById("copyBtn");
+    const msg = document.getElementById("msg");
+    const urlInput = document.getElementById("longUrl");
+    const codeInput = document.getElementById("customCode");
+    const ttlSelect = document.getElementById("ttl");
+    const params = new URLSearchParams(window.location.search);
+
+    function html(s) { return s.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m])) }
+    function show(type, text) {
+      msg.className = 'result ' + (type === 'error' ? 'err' : 'ok');
+      msg.style.display = 'block';
+      msg.innerHTML = text;
+    }
+
+    if (params.get("error") === "notfound") {
+      show("error", "Link not found. It may have expired, been deleted, or never existed.");
+      window.history.replaceState({}, document.title, "/");
+    }
+
+    async function shorten() {
+      const url = urlInput.value.trim();
+      const code = codeInput.value.trim();
+
+      // simple client-side validation
+      if (!url) {
+        show('error', 'Please enter a URL.');
+        return;
+      }
+
+      if (url.length > 2048) {
+        show('error', 'URL is too long (max ~2048 characters).');
+        return;
+      }
+
+      shortenBtn.disabled = true; msg.style.display = 'none';
+      try {
+        const payload = { url, ttlHours: Number(ttlSelect.value) };
+        if (code) payload.code = code;
+
+        const res = await fetch(API_BASE + "/shorten", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+
+        const short = data.shortUrl || `${PUBLIC_BASE}/r/${data.code}`;
+        const displayShort = short.replace(/^https?:\/\//i, "");
+        show('ok', `Your short link: <a class="link" href="${short}" target="_blank" rel="noopener">${html(displayShort)}</a>`);
+        copyBtn.onclick = async () => {
+          try { await navigator.clipboard.writeText(short); copyBtn.textContent = "Copied!"; setTimeout(() => copyBtn.textContent = "Copy result", 1200); }
+          catch { alert("Copied link: " + short); }
+        };
+      } catch (e) {
+        show('error', 'Error: ' + html(e.message));
+      } finally {
+        shortenBtn.disabled = false;
+      }
+    }
+
+    shortenBtn.addEventListener("click", shorten);
+    urlInput.addEventListener("keydown", e => { if (e.key === "Enter") shorten(); });
+  </script>
+</body>
+
+</html>

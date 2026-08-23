@@ -1,0 +1,20 @@
+[tool.ruff]
+target-version = "py312"   # match the Lambda runtime
+line-length = 110
+
+[tool.ruff.lint]
+# E/W = pycodestyle, F = pyflakes (undefined names, unused imports),
+# B = bugbear (likely bugs), I = import sorting.
+# F is the one that earns its keep: F821 catches undefined names, which is
+# the class of bug that takes down every request the first time it runs.
+select = ["E", "W", "F", "B", "I"]
+
+ignore = [
+    "E501",  # line length -- handled by the formatter, not worth failing CI over
+]
+
+[tool.ruff.lint.per-file-ignores]
+# The Lambda handler deliberately catches broad exceptions so nothing escapes
+# to API Gateway as an unhandled error. Same for the validators, which must
+# return a bool rather than propagate a parse failure.
+"create.py" = ["BLE001"]

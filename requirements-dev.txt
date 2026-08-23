@@ -1,0 +1,5 @@
+# Test/lint dependencies only. Lambda's runtime provides boto3, but the tests
+# import create.py directly so it's needed here too.
+boto3>=1.34
+pytest>=8.0
+ruff>=0.5

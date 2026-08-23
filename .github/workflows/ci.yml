@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:   # lets you trigger a run by hand from the Actions tab
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"   # match your Lambda runtime
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      # Catches undefined names, unused imports, and similar before tests run.
+      # This is the check that would have caught the ttl_hours_raw NameError,
+      # which pytest only catches because a test happens to exercise that line.
+      - name: Lint
+        run: ruff check .
+
+      - name: Test
+        run: pytest -q
