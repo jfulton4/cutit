@@ -6,7 +6,7 @@ Live at [cutit.app](https://cutit.app).
 
 ## What it does
 
-Takes a long URL, returns a short one. Links expire on a TTL chosen at
+Takes a long URL and returns a short one. Links expire on a TTL chosen at
 creation time (1, 3, 7, or 30 days). Custom short codes are supported.
 
 ## Architecture
@@ -47,8 +47,8 @@ reach the origin.
 and issues a redirect; it never requests the destination itself. The
 browser makes that request from the user's own network, which keeps the
 whole class of server-side request forgery off the table. Private and
-loopback addresses are rejected at create time as scope enforcement — this
-shortens links on the public web — rather than as a security control.
+loopback addresses are rejected at create time as scope enforcement. This
+shortens links on the public web rather than as a security control.
 
 ## Running the tests
 
@@ -61,16 +61,14 @@ ruff check .
 pytest -q
 ```
 
-121 tests, no AWS credentials or network access required — the DynamoDB
-calls are stubbed. `conftest.py` sets the environment variables the Lambda
-modules read at import time.
+There are 121 tests total, and they require no AWS credentials to run.
 
 ## CI
 
 GitHub Actions runs ruff and pytest on every push and pull request.
 See `.github/workflows/ci.yml`.
 
-Deployment is currently manual.
+Deployment is currently manual to AWS.
 
 ## Layout
 
