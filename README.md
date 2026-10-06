@@ -61,7 +61,7 @@ ruff check .
 pytest -q
 ```
 
-There are 121 tests total, and they require no AWS credentials to run.
+There are 132 tests total, and they require no AWS credentials to run.
 
 ## CI
 

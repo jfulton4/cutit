@@ -256,11 +256,53 @@ def test_handler_preflight():
     assert resp["statusCode"] == 204
 
 
-def test_handler_malformed_json_does_not_leak(captured):
-    resp = create.handler(
-        {"httpMethod": "POST", "headers": {}, "body": "{not json"}, None)
-    assert resp["statusCode"] == 500
-    assert body_of(resp) == {"error": "Server error"}
+@pytest.mark.parametrize("raw", [
+    "{not json",
+    "[]",
+    '"just a string"',
+    json.dumps({"url": 123}),
+    json.dumps({"url": ["https://example.com"]}),
+    json.dumps({"url": "https://example.com", "code": 123}),
+])
+def test_handler_malformed_body_is_400(raw, captured):
+    # Regression: these used to crash inside the handler and come back as 500.
+    resp = create.handler({"httpMethod": "POST", "headers": {}, "body": raw}, None)
+    assert resp["statusCode"] == 400
+    assert "error" in body_of(resp)
+    assert captured == []
+
+
+@pytest.mark.parametrize("url", [
+    "https://example.com/a\r\nSet-Cookie: x=1",
+    "https://example.com/a\nb",
+    "https://exam\tple.com",
+    "https://example.com/\x00",
+    "https://example.com/\x7f",
+])
+def test_handler_rejects_control_characters(url, captured):
+    # Regression: urlparse strips tab/CR/LF, so these passed validation and
+    # were stored raw, ending up in the redirect's Location header.
+    resp = create.handler(post({"url": url}), None)
+    assert resp["statusCode"] == 400
+    assert captured == []
+
+
+def test_put_item_allows_reusing_expired_codes(monkeypatch):
+    calls = []
+
+    class FakeTable:
+        def put_item(self, **kwargs):
+            calls.append(kwargs)
+
+    monkeypatch.setattr(create, "ddb", FakeTable())
+    monkeypatch.setattr(create.time, "time", lambda: 1_000_000.0)
+    create.put_item("my-link", "https://example.com", 24)
+
+    kwargs = calls[0]
+    assert kwargs["ConditionExpression"] == "attribute_not_exists(#c) OR #e <= :now"
+    assert kwargs["ExpressionAttributeNames"] == {"#c": "code", "#e": "expiresAt"}
+    assert kwargs["ExpressionAttributeValues"] == {":now": 1_000_000}
+    assert kwargs["Item"]["expiresAt"] == 1_000_000 + 24 * 3600
 
 
 def test_handler_reports_code_conflict(monkeypatch):
