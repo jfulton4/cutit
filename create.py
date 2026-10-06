@@ -26,6 +26,9 @@ HOSTNAME_RE = re.compile(
 ALLOWED_ORIGINS = {"https://cutit.app", "https://www.cutit.app", "https://api.cutit.app"}
 
 MAX_URL_LEN = 2048
+# urlparse silently drops tab/CR/LF before parsing, so a URL containing them
+# would pass validation but be stored (and later sent as a Location header) raw.
+CONTROL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f]")
 
 # Mirrors the TTL dropdown in the UI. The client only offers these values,
 # but the API is public and must not trust that.
@@ -158,15 +161,29 @@ def handler(event, context):
         return {"statusCode": 204, "headers": cors_headers(event), "body": ""}
 
     try:
-        body = json.loads(event.get("body") or "{}")
-        url = normalize_url(body.get("url") or "")
+        try:
+            body = json.loads(event.get("body") or "{}")
+        except ValueError:
+            return respond(event, 400, {"error": "Request body must be valid JSON."})
+        if not isinstance(body, dict):
+            return respond(event, 400, {"error": "Request body must be a JSON object."})
+
+        raw_url = body.get("url")
         requested = body.get("code")
+        if raw_url is not None and not isinstance(raw_url, str):
+            return respond(event, 400, {"error": "url must be a string."})
+        if requested is not None and not isinstance(requested, str):
+            return respond(event, 400, {"error": "code must be a string."})
+
+        url = normalize_url(raw_url or "")
 
         if not url:
             return respond(event, 400, {"error": "Provide a URL."})
         if len(url) > MAX_URL_LEN:
             return respond(event, 400,
                            {"error": f"URL is too long. Use one shorter than {MAX_URL_LEN} characters."})
+        if CONTROL_CHARS_RE.search(url):
+            return respond(event, 400, {"error": "URL contains invalid characters."})
         if not valid_url(url):
             return respond(event, 400,
                            {"error": "Provide a valid http(s) URL, e.g. example.com/page."})
@@ -214,18 +231,21 @@ def handler(event, context):
 
 
 def put_item(code: str, url: str, ttl_hours: int):
-    now_ms = int(time.time() * 1000)
+    now = time.time()
     item = {
         "code": code,
         "longUrl": url,
-        "createdAt": now_ms,
+        "createdAt": int(now * 1000),
         "hits": 0,
-        "expiresAt": int(time.time() + ttl_hours * 3600),  # epoch seconds
+        "expiresAt": int(now + ttl_hours * 3600),  # epoch seconds
     }
+    # An expired item counts as free: the redirect handler already treats it
+    # as gone, so its code can be reused before DynamoDB's TTL sweep runs.
     ddb.put_item(
         Item=item,
-        ConditionExpression="attribute_not_exists(#c)",
-        ExpressionAttributeNames={"#c": "code"},
+        ConditionExpression="attribute_not_exists(#c) OR #e <= :now",
+        ExpressionAttributeNames={"#c": "code", "#e": "expiresAt"},
+        ExpressionAttributeValues={":now": int(now)},
     )
 
 
